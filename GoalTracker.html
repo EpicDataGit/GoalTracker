@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Organization Goals Tracker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    .card {
+      background: #fff;
+      margin-bottom: 20px;
+      padding: 15px;
+      border-radius: 5px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      position: relative;
+    }
+    .card h2,
+    .card h3,
+    .card h4 {
+      margin: 0 0 10px;
+    }
+    input,
+    select,
+    button,
+    label {
+      padding: 5px;
+      margin: 5px 0;
+    }
+    .form-inline {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    .section {
+      margin-left: 20px;
+      margin-top: 10px;
+    }
+    /* Status styling for scope, budget, timing */
+    .status-green {
+      background-color: #c8e6c9;
+      color: #256029;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .status-orange {
+      background-color: #ffe0b2;
+      color: #e65100;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .status-red {
+      background-color: #ffcdd2;
+      color: #c62828;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    .status-default {
+      background-color: #eee;
+      color: #555;
+      padding: 2px 4px;
+      border-radius: 3px;
+    }
+    /* Delete cross styling */
+    .delete {
+      cursor: pointer;
+      color: red;
+      font-weight: bold;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Organization Goals Tracker</h1>
+    <!-- Container for strategic goals -->
+    <div id="strategicGoals"></div>
+    <!-- Form to add a new strategic goal -->
+    <div class="card">
+      <h2>Add Strategic Goal</h2>
+      <input type="text" id="newStrategicGoalTitle" placeholder="Strategic Goal Title" />
+      <button onclick="addStrategicGoal()">Add Strategic Goal</button>
+    </div>
+  </div>
+
+  <script>
+    // Main data model (hierarchical: strategicGoals > operationalGoals > deliverables)
+    let data = {
+      strategicGoals: []
+    };
+
+    // Load data from localStorage if available
+    function loadData() {
+      const storedData = localStorage.getItem("goalsData");
+      if (storedData) {
+        data = JSON.parse(storedData);
+      }
+    }
+
+    // Save data to localStorage
+    function saveData() {
+      localStorage.setItem("goalsData", JSON.stringify(data));
+    }
+
+    // Utility: generate a simple unique id
+    function generateId() {
+      return "_" + Math.random().toString(36).substr(2, 9);
+    }
+
+    // Convert status values into display text
+    function getStatusLabel(status) {
+      switch(status) {
+        case 'green': return 'On Track';
+        case 'orange': return 'At Risk';
+        case 'red': return 'Off Track';
+        default: return '-';
+      }
+    }
+
+    // Calculate average progress for an operational goal (based on its deliverables)
+    function calculateOperationalProgress(operationalGoal) {
+      if (!operationalGoal.deliverables || operationalGoal.deliverables.length === 0) return 0;
+      const total = operationalGoal.deliverables.reduce(
+        (sum, d) => sum + Number(d.progress || 0),
+        0
+      );
+      return (total / operationalGoal.deliverables.length).toFixed(2);
+    }
+
+    // Calculate average progress for a strategic goal (based on its operational goals)
+    function calculateStrategicProgress(strategicGoal) {
+      if (!strategicGoal.operationalGoals || strategicGoal.operationalGoals.length === 0) return 0;
+      const total = strategicGoal.operationalGoals.reduce(
+        (sum, op) => sum + Number(calculateOperationalProgress(op)),
+        0
+      );
+      return (total / strategicGoal.operationalGoals.length).toFixed(2);
+    }
+
+    // Render the entire application
+    function renderApp() {
+      const container = document.getElementById("strategicGoals");
+      container.innerHTML = "";
+      data.strategicGoals.forEach((strategicGoal) => {
+        // Create strategic goal card with delete option
+        const strategicDiv = document.createElement("div");
+        strategicDiv.className = "card";
+        strategicDiv.innerHTML = `
+          <h2>${strategicGoal.title} (Progress: ${calculateStrategicProgress(
+          strategicGoal
+        )}%) <span class="delete" onclick="deleteStrategicGoal('${strategicGoal.id}')">&times;</span></h2>
+          <div id="operational-${strategicGoal.id}" class="section"></div>
+          <div class="section">
+            <input type="text" id="newOperational-${strategicGoal.id}" placeholder="Operational Goal Title">
+            <button onclick="addOperationalGoal('${strategicGoal.id}')">Add Operational Goal</button>
+          </div>
+        `;
+        container.appendChild(strategicDiv);
+
+        // Render operational goals for this strategic goal
+        const operationalContainer = document.getElementById(`operational-${strategicGoal.id}`);
+        if (strategicGoal.operationalGoals) {
+          strategicGoal.operationalGoals.forEach((operationalGoal) => {
+            const operationalDiv = document.createElement("div");
+            operationalDiv.className = "card";
+            operationalDiv.style.background = "#eef";
+            operationalDiv.innerHTML = `
+              <h3>${operationalGoal.title} (Progress: ${calculateOperationalProgress(
+              operationalGoal
+            )}%) <span class="delete" onclick="deleteOperationalGoal('${strategicGoal.id}', '${operationalGoal.id}')">&times;</span></h3>
+              <div id="deliverables-${operationalGoal.id}" class="section"></div>
+              <div class="section">
+                <input type="text" id="newDeliverable-${operationalGoal.id}" placeholder="Deliverable Title">
+                <label>Progress: 
+                  <input type="range" id="progress-${operationalGoal.id}" min="0" max="100" value="0" oninput="document.getElementById('progressOutput-${operationalGoal.id}').value = this.value">
+                  <output id="progressOutput-${operationalGoal.id}">0</output>%
+                </label>
+                <label>
+                  <select id="scope-${operationalGoal.id}">
+                    <option value="">Scope</option>
+                    <option value="green">On Track</option>
+                    <option value="orange">At Risk</option>
+                    <option value="red">Off Track</option>
+                  </select>
+                </label>
+                <label>
+                  <select id="budget-${operationalGoal.id}">
+                    <option value="">Budget</option>
+                    <option value="green">On Track</option>
+                    <option value="orange">At Risk</option>
+                    <option value="red">Off Track</option>
+                  </select>
+                </label>
+                <label>
+                  <select id="timing-${operationalGoal.id}">
+                    <option value="">Timing</option>
+                    <option value="green">On Track</option>
+                    <option value="orange">At Risk</option>
+                    <option value="red">Off Track</option>
+                  </select>
+                </label>
+                <input type="text" id="assigned-${operationalGoal.id}" placeholder="Assigned To">
+                <button onclick="addDeliverable('${strategicGoal.id}','${operationalGoal.id}')">Add Deliverable</button>
+              </div>
+            `;
+            operationalContainer.appendChild(operationalDiv);
+
+            // Render deliverables for this operational goal
+            const deliverablesContainer = document.getElementById(`deliverables-${operationalGoal.id}`);
+            if (operationalGoal.deliverables) {
+              operationalGoal.deliverables.forEach((deliverable) => {
+                const deliverableDiv = document.createElement("div");
+                deliverableDiv.className = "card";
+                deliverableDiv.style.background = "#efe";
+                if (deliverable.editing) {
+                  // Editing mode: show an inline form with pre-populated values
+                  deliverableDiv.innerHTML = `
+                    <div>
+                      <label>Title: <input type="text" id="editTitle-${deliverable.id}" value="${deliverable.title}"></label>
+                    </div>
+                    <div>
+                      <label>Progress: 
+                        <input type="range" id="editProgress-${deliverable.id}" min="0" max="100" value="${deliverable.progress}" oninput="document.getElementById('editProgressOutput-${deliverable.id}').value = this.value">
+                        <output id="editProgressOutput-${deliverable.id}">${deliverable.progress}</output>%
+                      </label>
+                    </div>
+                    <div>
+                      <label>Scope: 
+                        <select id="editScope-${deliverable.id}">
+                          <option value="">Select</option>
+                          <option value="green" ${deliverable.scope === "green" ? "selected" : ""}>On Track</option>
+                          <option value="orange" ${deliverable.scope === "orange" ? "selected" : ""}>At Risk</option>
+                          <option value="red" ${deliverable.scope === "red" ? "selected" : ""}>Off Track</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div>
+                      <label>Budget: 
+                        <select id="editBudget-${deliverable.id}">
+                          <option value="">Select</option>
+                          <option value="green" ${deliverable.budget === "green" ? "selected" : ""}>On Track</option>
+                          <option value="orange" ${deliverable.budget === "orange" ? "selected" : ""}>At Risk</option>
+                          <option value="red" ${deliverable.budget === "red" ? "selected" : ""}>Off Track</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div>
+                      <label>Timing: 
+                        <select id="editTiming-${deliverable.id}">
+                          <option value="">Select</option>
+                          <option value="green" ${deliverable.timing === "green" ? "selected" : ""}>On Track</option>
+                          <option value="orange" ${deliverable.timing === "orange" ? "selected" : ""}>At Risk</option>
+                          <option value="red" ${deliverable.timing === "red" ? "selected" : ""}>Off Track</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div>
+                      <label>Assigned to: <input type="text" id="editAssigned-${deliverable.id}" value="${deliverable.assignedTo}"></label>
+                    </div>
+                    <div>
+                      <button onclick="saveDeliverableEdit('${strategicGoal.id}','${operationalGoal.id}','${deliverable.id}')">Save</button>
+                      <button onclick="cancelDeliverableEdit('${strategicGoal.id}','${operationalGoal.id}','${deliverable.id}')">Cancel</button>
+                    </div>
+                  `;
+                } else {
+                  // Display mode: show deliverable details with colored status badges and edit/delete buttons
+                  deliverableDiv.innerHTML = `
+                    <h4>${deliverable.title} <span class="delete" onclick="deleteDeliverable('${strategicGoal.id}','${operationalGoal.id}','${deliverable.id}')">&times;</span></h4>
+                    <p>
+                      <strong>Progress:</strong> ${deliverable.progress}%<br>
+                      <strong>Scope:</strong> <span class="status-${deliverable.scope || "default"}">${getStatusLabel(deliverable.scope)}</span>,
+                      <strong>Budget:</strong> <span class="status-${deliverable.budget || "default"}">${getStatusLabel(deliverable.budget)}</span>,
+                      <strong>Timing:</strong> <span class="status-${deliverable.timing || "default"}">${getStatusLabel(deliverable.timing)}</span>
+                      <br>
+                      <strong>Assigned to:</strong> ${deliverable.assignedTo || "-"}
+                    </p>
+                    <button onclick="editDeliverable('${strategicGoal.id}','${operationalGoal.id}','${deliverable.id}')">Edit</button>
+                  `;
+                }
+                deliverablesContainer.appendChild(deliverableDiv);
+              });
+            }
+          });
+        }
+      });
+    }
+
+    // Add a new strategic goal
+    function addStrategicGoal() {
+      const titleInput = document.getElementById("newStrategicGoalTitle");
+      const title = titleInput.value.trim();
+      if (title === "") {
+        alert("Please enter a strategic goal title.");
+        return;
+      }
+      const newGoal = {
+        id: generateId(),
+        title: title,
+        operationalGoals: []
+      };
+      data.strategicGoals.push(newGoal);
+      titleInput.value = "";
+      saveData();
+      renderApp();
+    }
+
+    // Add a new operational goal under a strategic goal
+    function addOperationalGoal(strategicId) {
+      const input = document.getElementById(`newOperational-${strategicId}`);
+      const title = input.value.trim();
+      if (title === "") {
+        alert("Please enter an operational goal title.");
+        return;
+      }
+      const strategicGoal = data.strategicGoals.find((g) => g.id === strategicId);
+      const newOperational = {
+        id: generateId(),
+        title: title,
+        deliverables: []
+      };
+      if (!strategicGoal.operationalGoals) {
+        strategicGoal.operationalGoals = [];
+      }
+      strategicGoal.operationalGoals.push(newOperational);
+      input.value = "";
+      saveData();
+      renderApp();
+    }
+
+    // Add a new deliverable under an operational goal
+    function addDeliverable(strategicId, operationalId) {
+      // Get input values from the creation form
+      const titleInput = document.getElementById(`newDeliverable-${operationalId}`);
+      const progressInput = document.getElementById(`progress-${operationalId}`);
+      const scopeSelect = document.getElementById(`scope-${operationalId}`);
+      const budgetSelect = document.getElementById(`budget-${operationalId}`);
+      const timingSelect = document.getElementById(`timing-${operationalId}`);
+      const assignedInput = document.getElementById(`assigned-${operationalId}`);
+
+      const title = titleInput.value.trim();
+      const progress = progressInput.value.trim();
+      if (title === "" || progress === "") {
+        alert("Please enter deliverable title and progress.");
+        return;
+      }
+
+      const newDeliverable = {
+        id: generateId(),
+        title: title,
+        progress: progress,
+        scope: scopeSelect.value,
+        budget: budgetSelect.value,
+        timing: timingSelect.value,
+        assignedTo: assignedInput.value.trim()
+      };
+
+      // Locate the correct operational goal
+      const strategicGoal = data.strategicGoals.find((g) => g.id === strategicId);
+      if (!strategicGoal) return;
+      const operationalGoal = strategicGoal.operationalGoals.find((op) => op.id === operationalId);
+      if (!operationalGoal) return;
+      if (!operationalGoal.deliverables) {
+        operationalGoal.deliverables = [];
+      }
+      operationalGoal.deliverables.push(newDeliverable);
+
+      // Clear input fields after adding
+      titleInput.value = "";
+      progressInput.value = "0";
+      document.getElementById(`progressOutput-${operationalId}`).value = "0";
+      scopeSelect.value = "";
+      budgetSelect.value = "";
+      timingSelect.value = "";
+      assignedInput.value = "";
+
+      saveData();
+      renderApp();
+    }
+
+    // Enable editing mode for a deliverable
+    function editDeliverable(strategicId, operationalId, deliverableId) {
+      const strategicGoal = data.strategicGoals.find((g) => g.id === strategicId);
+      if (!strategicGoal) return;
+      const operationalGoal = strategicGoal.operationalGoals.find((op) => op.id === operationalId);
+      if (!operationalGoal) return;
+      const deliverable = operationalGoal.deliverables.find((d) => d.id === deliverableId);
+      if (!deliverable) return;
+      deliverable.editing = true;
+      renderApp();
+    }
+
+    // Save the edited deliverable
+    function saveDeliverableEdit(strategicId, operationalId, deliverableId) {
+      const strategicGoal = data.strategicGoals.find((g) => g.id === strategicId);
+      if (!strategicGoal) return;
+      const operationalGoal = strategicGoal.operationalGoals.find((op) => op.id === operationalId);
+      if (!operationalGoal) return;
+      const deliverable = operationalGoal.deliverables.find((d) => d.id === deliverableId);
+      if (!deliverable) return;
+
+      const title = document.getElementById(`editTitle-${deliverable.id}`).value.trim();
+      const progress = document.getElementById(`editProgress-${deliverable.id}`).value.trim();
+      const scope = document.getElementById(`editScope-${deliverable.id}`).value;
+      const budget = document.getElementById(`editBudget-${deliverable.id}`).value;
+      const timing = document.getElementById(`editTiming-${deliverable.id}`).value;
+      const assignedTo = document.getElementById(`editAssigned-${deliverable.id}`).value.trim();
+
+      if (title === "" || progress === "") {
+        alert("Title and progress are required.");
+        return;
+      }
+
+      deliverable.title = title;
+      deliverable.progress = progress;
+      deliverable.scope = scope;
+      deliverable.budget = budget;
+      deliverable.timing = timing;
+      deliverable.assignedTo = assignedTo;
+      delete deliverable.editing;
+      saveData();
+      renderApp();
+    }
+
+    // Cancel editing mode for a deliverable
+    function cancelDeliverableEdit(strategicId, operationalId, deliverableId) {
+      const strategicGoal = data.strategicGoals.find((g) => g.id === strategicId);
+      if (!strategicGoal) return;
+      const operationalGoal = strategicGoal.operationalGoals.find((op) => op.id === operationalId);
+      if (!operationalGoal) return;
+      const deliverable = operationalGoal.deliverables.find((d) => d.id === deliverableId);
+      if (!deliverable) return;
+      delete deliverable.editing;
+      renderApp();
+    }
+
+    // Delete a deliverable
+    function deleteDeliverable(strategicId, operationalId, deliverableId) {
+      const strategicGoal = data.strategicGoals.find(g => g.id === strategicId);
+      if (!strategicGoal) return;
+      const operationalGoal = strategicGoal.operationalGoals.find(op => op.id === operationalId);
+      if (!operationalGoal) return;
+      operationalGoal.deliverables = operationalGoal.deliverables.filter(d => d.id !== deliverableId);
+      saveData();
+      renderApp();
+    }
+
+    // Delete an operational goal
+    function deleteOperationalGoal(strategicId, operationalId) {
+      const strategicGoal = data.strategicGoals.find(g => g.id === strategicId);
+      if (!strategicGoal) return;
+      strategicGoal.operationalGoals = strategicGoal.operationalGoals.filter(op => op.id !== operationalId);
+      saveData();
+      renderApp();
+    }
+
+    // Delete a strategic goal
+    function deleteStrategicGoal(strategicId) {
+      data.strategicGoals = data.strategicGoals.filter(g => g.id !== strategicId);
+      saveData();
+      renderApp();
+    }
+
+    // Initialize the application
+    loadData();
+    renderApp();
+  </script>
+</body>
+</html>
